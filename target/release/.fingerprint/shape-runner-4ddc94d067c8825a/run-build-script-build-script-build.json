@@ -1,0 +1,1 @@
+{"rustc":2490638836439573635,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[15630821612520223293,"build_script_build",false,3313377303534988846]],"local":[{"RerunIfChanged":{"output":"release\\build\\shape-runner-4ddc94d067c8825a\\output","paths":["proto/shaperunner.proto","proto"]}}],"rustflags":[],"config":0,"compile_kind":0}

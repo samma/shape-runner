@@ -1,0 +1,31 @@
+[package]
+name = "shape-runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rmp-serde = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tonic = { version = "0.12", features = ["transport"] }
+prost = "0.13"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+ureq = { version = "2", features = ["json"] }
+clap = { version = "4", features = ["derive"] }
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+prost-build = "0.13"
+
+[[bin]]
+name = "shape-runner-cli"
+path = "src/bin/shape-runner-cli.rs"
+
+[[bin]]
+name = "mock-llm-server"
+path = "src/bin/mock-llm-server.rs"

@@ -1,0 +1,11 @@
+{
+  "repo_summary": "A web application for managing tasks and projects with real-time collaboration features",
+  "constraints": [
+    "Must use PostgreSQL for data persistence",
+    "Real-time updates should use WebSockets",
+    "API should be RESTful",
+    "Frontend must be responsive and work on mobile devices",
+    "Authentication required for all operations"
+  ]
+}
+
