@@ -3,7 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::shape::{FeatureDesignInput, FeatureDesignOutput};
+use crate::shape::{FeatureDesignInput, FeatureDesignOutput, FormationInput, FormationOutput};
 use crate::types::{validate, TypeDef, ValidationError};
 
 #[derive(Clone)]
@@ -51,22 +51,169 @@ impl LlmClient {
     ) -> Result<FeatureDesignOutput> {
         let max_retries = 3;
         let mut last_errors: Option<Vec<ValidationError>> = None;
+        let mut last_json_error: Option<String> = None;
 
-        for _attempt in 0..max_retries {
-            let prompt = build_prompt(input, output_schema, last_errors.as_ref());
+        for attempt in 0..max_retries {
+            eprintln!("[DEMO] Attempt {} of {}", attempt + 1, max_retries);
+            if let Some(ref errors) = last_errors {
+                eprintln!("[DEMO] Previous validation errors:");
+                for err in errors {
+                    eprintln!("[DEMO]   - {}", err);
+                }
+            }
+            if let Some(ref json_err) = last_json_error {
+                eprintln!("[DEMO] Previous JSON parse error: {}", json_err);
+            }
+            
+            let prompt = build_prompt(input, output_schema, last_errors.as_ref(), last_json_error.as_deref());
 
             let llm_json_text = self.call_llm(&prompt).await?;
+            
+            // Log the raw response for debugging (first 500 chars)
+            if attempt == 0 {
+                let preview = if llm_json_text.len() > 500 {
+                    format!("{}...", &llm_json_text[..500])
+                } else {
+                    llm_json_text.clone()
+                };
+                eprintln!("[DEMO] LLM raw response (first 500 chars):\n{}", preview);
+            }
 
-            let value: Value = serde_json::from_str(&llm_json_text)
-                .map_err(|e| anyhow!("LLM did not return valid JSON: {e}"))?;
+            // Try to parse JSON - retry if it fails
+            let value: Value = match serde_json::from_str(&llm_json_text) {
+                Ok(v) => {
+                    v
+                }
+                Err(e) => {
+                    let error_msg = format!("{}", e);
+                    eprintln!("[DEMO] JSON parse error: {}", error_msg);
+                    eprintln!("[DEMO] Response length: {}, First 200 chars: {}", 
+                        llm_json_text.len(),
+                        if llm_json_text.len() > 200 { &llm_json_text[..200] } else { &llm_json_text }
+                    );
+                    
+                    // If this is the last attempt, return error
+                    if attempt == max_retries - 1 {
+                        return Err(anyhow!("LLM did not return valid JSON after {} attempts. Last error: {}", max_retries, error_msg));
+                    }
+                    
+                    // Otherwise, save error and retry
+                    last_json_error = Some(error_msg);
+                    last_errors = None; // Clear validation errors since we didn't get that far
+                    if attempt < max_retries - 1 {
+                        eprintln!("[DEMO] Retrying with JSON error feedback...\n");
+                    }
+                    continue;
+                }
+            };
 
             match validate(output_schema, &value) {
                 Ok(()) => {
+                    eprintln!("[DEMO] ✓ Validation passed! Returning result.");
                     let typed: FeatureDesignOutput = serde_json::from_value(value)?;
                     return Ok(typed);
                 }
                 Err(errors) => {
+                    eprintln!("[DEMO] ✗ Validation failed with {} error(s)", errors.len());
                     last_errors = Some(errors);
+                    last_json_error = None; // Clear JSON error since JSON was valid
+                    if attempt < max_retries - 1 {
+                        eprintln!("[DEMO] Retrying...\n");
+                    }
+                    continue;
+                }
+            }
+        }
+
+        Err(anyhow!(
+            "LLM failed to produce valid output after {} attempts",
+            max_retries
+        ))
+    }
+
+    pub async fn generate_formation(
+        &self,
+        input: &FormationInput,
+        output_schema: &TypeDef,
+    ) -> Result<FormationOutput> {
+        let max_retries = 3;
+        let mut last_errors: Option<Vec<ValidationError>> = None;
+        let mut last_json_error: Option<String> = None;
+
+        for attempt in 0..max_retries {
+            eprintln!("[DEMO] Formation attempt {} of {}", attempt + 1, max_retries);
+            if let Some(ref errors) = last_errors {
+                eprintln!("[DEMO] Previous validation errors:");
+                for err in errors {
+                    eprintln!("[DEMO]   - {}", err);
+                }
+            }
+            if let Some(ref json_err) = last_json_error {
+                eprintln!("[DEMO] Previous JSON parse error: {}", json_err);
+            }
+            
+            let prompt = build_formation_prompt(input, output_schema, last_errors.as_ref(), last_json_error.as_deref());
+
+            let llm_json_text = self.call_llm(&prompt).await?;
+            
+            // Try to parse JSON - retry if it fails
+            let value: Value = match serde_json::from_str(&llm_json_text) {
+                Ok(v) => {
+                    v
+                }
+                Err(e) => {
+                    let error_msg = format!("{}", e);
+                    eprintln!("[DEMO] JSON parse error: {}", error_msg);
+                    
+                    // If this is the last attempt, return error
+                    if attempt == max_retries - 1 {
+                        return Err(anyhow!("LLM did not return valid JSON after {} attempts. Last error: {}", max_retries, error_msg));
+                    }
+                    
+                    // Otherwise, save error and retry
+                    last_json_error = Some(error_msg);
+                    last_errors = None; // Clear validation errors since we didn't get that far
+                    if attempt < max_retries - 1 {
+                        eprintln!("[DEMO] Retrying with JSON error feedback...\n");
+                    }
+                    continue;
+                }
+            };
+
+            match validate(output_schema, &value) {
+                Ok(()) => {
+                    eprintln!("[DEMO] ✓ Schema validation passed!");
+                    let typed: FormationOutput = serde_json::from_value(value)?;
+                    
+                    // Validate that we have the correct number of coordinates
+                    if typed.coordinates.len() != input.unit_count as usize {
+                        eprintln!("[DEMO] ✗ Coordinate count mismatch: expected {}, got {}", 
+                            input.unit_count, typed.coordinates.len());
+                        // Create a validation-like error to trigger retry
+                        let mut errors = Vec::new();
+                        errors.push(ValidationError::TypeMismatch {
+                            path: "$.coordinates".to_string(),
+                            expected: format!("array with exactly {} items", input.unit_count),
+                            found: format!("array with {} items", typed.coordinates.len()),
+                        });
+                        last_errors = Some(errors);
+                        last_json_error = None;
+                        if attempt < max_retries - 1 {
+                            eprintln!("[DEMO] Retrying with coordinate count feedback...\n");
+                        }
+                        continue;
+                    }
+                    
+                    eprintln!("[DEMO] ✓ All validation passed! Returning result.");
+                    return Ok(typed);
+                }
+                Err(errors) => {
+                    eprintln!("[DEMO] ✗ Validation failed with {} error(s)", errors.len());
+                    last_errors = Some(errors);
+                    last_json_error = None; // Clear JSON error since JSON was valid
+                    if attempt < max_retries - 1 {
+                        eprintln!("[DEMO] Retrying...\n");
+                    }
                     continue;
                 }
             }
@@ -187,13 +334,76 @@ fn clean_json_response(response: &str) -> String {
         }
     }
     
-    cleaned.trim().to_string()
+    cleaned = cleaned.trim();
+    
+    // Try to find JSON object boundaries if there's extra text
+    // Look for the first { and last } - be more aggressive about finding complete JSON
+    if let Some(first_brace) = cleaned.find('{') {
+        // Find the matching closing brace by counting braces
+        let mut brace_count = 0;
+        let mut last_brace = None;
+        for (i, c) in cleaned[first_brace..].char_indices() {
+            match c {
+                '{' => brace_count += 1,
+                '}' => {
+                    brace_count -= 1;
+                    if brace_count == 0 {
+                        last_brace = Some(first_brace + i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        if let Some(end_pos) = last_brace {
+            cleaned = &cleaned[first_brace..=end_pos];
+        } else if let Some(fallback_brace) = cleaned.rfind('}') {
+            // Fallback to simple rfind if brace counting fails
+            if fallback_brace > first_brace {
+                cleaned = &cleaned[first_brace..=fallback_brace];
+            }
+        }
+    }
+    
+    // Aggressively filter out control characters that break JSON parsing
+    // Control characters in JSON strings must be escaped (like \n, \t), but raw ones break parsing
+    let cleaned_str: String = cleaned
+        .chars()
+        .filter_map(|c| {
+            match c {
+                // Remove null bytes and other problematic control chars completely
+                '\u{0000}'..='\u{001F}' => {
+                    // Replace with escaped version if it's a common one, otherwise skip
+                    match c {
+                        '\n' => Some(' '),  // Replace newline with space
+                        '\t' => Some(' '),  // Replace tab with space
+                        '\r' => None,       // Remove carriage return
+                        _ => None,          // Remove other control chars
+                    }
+                }
+                // Keep all printable characters
+                _ => Some(c),
+            }
+        })
+        .collect();
+    
+    // Remove trailing commas before } or ] (common LLM mistake)
+    let mut result = cleaned_str.trim().to_string();
+    result = result.replace(",}", "}");
+    result = result.replace(",]", "]");
+    // Also handle cases with whitespace: ", }" -> "}"
+    result = result.replace(", }", "}");
+    result = result.replace(", ]", "]");
+    
+    result.trim().to_string()
 }
 
 fn build_prompt(
     input: &FeatureDesignInput,
     output_schema: &TypeDef,
     last_errors: Option<&Vec<ValidationError>>,
+    last_json_error: Option<&str>,
 ) -> String {
     let mut s = String::new();
 
@@ -201,7 +411,9 @@ fn build_prompt(
     s.push_str("You must produce a JSON object that matches this schema:\n\n");
     s.push_str(&describe_schema(output_schema, 0));
     s.push_str("\n\nThe JSON must be parseable and not contain comments or explanations.\n");
-    s.push_str("Do not wrap it in markdown code fences.\n\n");
+    s.push_str("Do not wrap it in markdown code fences.\n");
+    s.push_str("Do not include control characters (null bytes, etc.) in your output.\n");
+    s.push_str("Escape special characters properly in JSON strings (use \\n for newlines, etc.).\n\n");
 
     s.push_str("Context:\n");
     s.push_str("- Repo summary: ");
@@ -213,8 +425,72 @@ fn build_prompt(
         s.push('\n');
     }
 
+    if let Some(json_err) = last_json_error {
+        s.push_str("\nYour previous response was not valid JSON. The error was:\n");
+        s.push_str(json_err);
+        s.push_str("\n\nPlease output ONLY valid, parseable JSON without any control characters or formatting issues.\n");
+    }
+
     if let Some(errors) = last_errors {
-        s.push_str("\nYour previous JSON had these problems:\n");
+        s.push_str("\nYour previous JSON had these validation problems:\n");
+        for e in errors {
+            s.push_str("- ");
+            s.push_str(&e.to_string());
+            s.push('\n');
+        }
+        s.push_str("\nFix these issues and output ONLY corrected JSON.\n");
+    }
+
+    s
+}
+
+fn build_formation_prompt(
+    input: &FormationInput,
+    output_schema: &TypeDef,
+    last_errors: Option<&Vec<ValidationError>>,
+    last_json_error: Option<&str>,
+) -> String {
+    let mut s = String::new();
+
+    s.push_str("You are a system that strictly outputs JSON.\n");
+    s.push_str("You must produce a JSON object that matches this schema:\n\n");
+    s.push_str(&describe_schema(output_schema, 0));
+    s.push_str("\n\nThe JSON must be parseable and not contain comments or explanations.\n");
+    s.push_str("Do not wrap it in markdown code fences.\n");
+    s.push_str("Do not include control characters (null bytes, etc.) in your output.\n");
+    s.push_str("Escape special characters properly in JSON strings (use \\n for newlines, etc.).\n\n");
+
+    s.push_str("Task: Generate 2D coordinates for unit formation.\n");
+    s.push_str(&format!("- Formation description: {}\n", input.formation_description));
+    s.push_str(&format!("- Number of units: {}\n", input.unit_count));
+    s.push_str("\n");
+    s.push_str("CRITICAL: You MUST generate EXACTLY ");
+    s.push_str(&input.unit_count.to_string());
+    s.push_str(" coordinates (x, y pairs), no more, no less.\n");
+    s.push_str("The coordinates array must contain exactly ");
+    s.push_str(&input.unit_count.to_string());
+    s.push_str(" items.\n");
+    s.push_str("Coordinates should be reasonable 2D positions (typically between 0-100 for x and y).\n");
+    s.push_str("The formation should be visually recognizable as the requested shape.\n");
+    s.push_str("\n");
+    s.push_str("Example output format (for 3 units):\n");
+    s.push_str("{\"coordinates\":[{\"x\":0.0,\"y\":0.0},{\"x\":10.0,\"y\":0.0},{\"x\":5.0,\"y\":10.0}]}\n");
+    s.push_str("\n");
+    s.push_str("CRITICAL: Output ONLY the JSON object, nothing else. No text before or after. No markdown. No explanations.\n");
+    s.push_str("The JSON must be valid and parseable. Do NOT include:\n");
+    s.push_str("- Control characters (null bytes, etc.)\n");
+    s.push_str("- Unescaped newlines or tabs inside JSON strings\n");
+    s.push_str("- Any characters outside the JSON structure\n");
+    s.push_str("- Trailing commas\n");
+
+    if let Some(json_err) = last_json_error {
+        s.push_str("\nYour previous response was not valid JSON. The error was:\n");
+        s.push_str(json_err);
+        s.push_str("\n\nPlease output ONLY valid, parseable JSON without any control characters or formatting issues.\n");
+    }
+
+    if let Some(errors) = last_errors {
+        s.push_str("\nYour previous JSON had these validation problems:\n");
         for e in errors {
             s.push_str("- ");
             s.push_str(&e.to_string());

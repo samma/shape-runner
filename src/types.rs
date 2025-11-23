@@ -21,7 +21,7 @@ pub struct FieldDef {
 #[derive(Debug, Clone)]
 pub enum ValidationError {
     MissingField { path: String },
-    TypeMismatch { path: String, expected: &'static str, found: &'static str },
+    TypeMismatch { path: String, expected: String, found: String },
 }
 
 impl std::fmt::Display for ValidationError {
@@ -60,8 +60,8 @@ fn validate_inner(ty: &TypeDef, value: &Value, path: &str, errors: &mut Vec<Vali
             if !value.is_string() {
                 errors.push(ValidationError::TypeMismatch {
                     path: path.to_string(),
-                    expected: "string",
-                    found: value_type_name(value),
+                    expected: "string".to_string(),
+                    found: value_type_name(value).to_string(),
                 });
             }
         }
@@ -69,8 +69,8 @@ fn validate_inner(ty: &TypeDef, value: &Value, path: &str, errors: &mut Vec<Vali
             if !value.is_number() {
                 errors.push(ValidationError::TypeMismatch {
                     path: path.to_string(),
-                    expected: "number",
-                    found: value_type_name(value),
+                    expected: "number".to_string(),
+                    found: value_type_name(value).to_string(),
                 });
             }
         }
@@ -78,8 +78,8 @@ fn validate_inner(ty: &TypeDef, value: &Value, path: &str, errors: &mut Vec<Vali
             if !value.is_boolean() {
                 errors.push(ValidationError::TypeMismatch {
                     path: path.to_string(),
-                    expected: "boolean",
-                    found: value_type_name(value),
+                    expected: "boolean".to_string(),
+                    found: value_type_name(value).to_string(),
                 });
             }
         }
@@ -92,8 +92,8 @@ fn validate_inner(ty: &TypeDef, value: &Value, path: &str, errors: &mut Vec<Vali
             } else {
                 errors.push(ValidationError::TypeMismatch {
                     path: path.to_string(),
-                    expected: "array",
-                    found: value_type_name(value),
+                    expected: "array".to_string(),
+                    found: value_type_name(value).to_string(),
                 });
             }
         }
@@ -101,8 +101,8 @@ fn validate_inner(ty: &TypeDef, value: &Value, path: &str, errors: &mut Vec<Vali
             let Some(obj) = value.as_object() else {
                 errors.push(ValidationError::TypeMismatch {
                     path: path.to_string(),
-                    expected: "object",
-                    found: value_type_name(value),
+                    expected: "object".to_string(),
+                    found: value_type_name(value).to_string(),
                 });
                 return;
             };

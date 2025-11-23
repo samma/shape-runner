@@ -5,7 +5,7 @@ use shape_runner::codec::MsgPackCodec;
 use shape_runner::llm::LlmClient;
 use shape_runner::rpc::shaperunner::shape_runner_server::{ShapeRunner, ShapeRunnerServer};
 use shape_runner::rpc::shaperunner::{RunRequest, RunResponse};
-use shape_runner::shape::{feature_design_output_typedef, FeatureDesignInput, FeatureDesignOutput};
+use shape_runner::shape::{feature_design_output_typedef, formation_output_typedef, FeatureDesignInput, FeatureDesignOutput, FormationInput, FormationOutput};
 use tonic::{transport::Server, Request, Response, Status};
 
 struct ShapeRunnerService<C> {
@@ -21,36 +21,65 @@ where
     async fn run(&self, request: Request<RunRequest>) -> Result<Response<RunResponse>, Status> {
         let inner = request.into_inner();
 
-        if inner.shape_id != "FeatureDesign" {
-            return Err(Status::not_found("unknown shape_id"));
+        match inner.shape_id.as_str() {
+            "FeatureDesign" => {
+                // Decode input bytes to FeatureDesignInput
+                let input: FeatureDesignInput = self
+                    .codec
+                    .decode(&inner.input)
+                    .map_err(|e| Status::invalid_argument(format!("decode input failed: {e}")))?;
+
+                // Call LLM + validation
+                let output: FeatureDesignOutput = self
+                    .llm
+                    .generate_feature_design(&input, &feature_design_output_typedef())
+                    .await
+                    .map_err(|e| Status::internal(format!("LLM error: {e}")))?;
+
+                // Encode output to bytes
+                let output_bytes = self
+                    .codec
+                    .encode(&output)
+                    .map_err(|e| Status::internal(format!("encode output failed: {e}")))?;
+
+                let resp = RunResponse {
+                    output: output_bytes,
+                    ok: true,
+                    error: String::new(),
+                };
+
+                Ok(Response::new(resp))
+            }
+            "Formation" => {
+                // Decode input bytes to FormationInput
+                let input: FormationInput = self
+                    .codec
+                    .decode(&inner.input)
+                    .map_err(|e| Status::invalid_argument(format!("decode input failed: {e}")))?;
+
+                // Call LLM + validation
+                let output: FormationOutput = self
+                    .llm
+                    .generate_formation(&input, &formation_output_typedef())
+                    .await
+                    .map_err(|e| Status::internal(format!("LLM error: {e}")))?;
+
+                // Encode output to bytes
+                let output_bytes = self
+                    .codec
+                    .encode(&output)
+                    .map_err(|e| Status::internal(format!("encode output failed: {e}")))?;
+
+                let resp = RunResponse {
+                    output: output_bytes,
+                    ok: true,
+                    error: String::new(),
+                };
+
+                Ok(Response::new(resp))
+            }
+            _ => Err(Status::not_found(format!("unknown shape_id: {}", inner.shape_id))),
         }
-
-        // Decode input bytes to FeatureDesignInput
-        let input: FeatureDesignInput = self
-            .codec
-            .decode(&inner.input)
-            .map_err(|e| Status::invalid_argument(format!("decode input failed: {e}")))?;
-
-        // Call LLM + validation
-        let output: FeatureDesignOutput = self
-            .llm
-            .generate_feature_design(&input, &feature_design_output_typedef())
-            .await
-            .map_err(|e| Status::internal(format!("LLM error: {e}")))?;
-
-        // Encode output to bytes
-        let output_bytes = self
-            .codec
-            .encode(&output)
-            .map_err(|e| Status::internal(format!("encode output failed: {e}")))?;
-
-        let resp = RunResponse {
-            output: output_bytes,
-            ok: true,
-            error: String::new(),
-        };
-
-        Ok(Response::new(resp))
     }
 }
 

@@ -3,7 +3,7 @@ use clap::Parser;
 use serde_json;
 use shape_runner::client::ShapeRunnerClientWrapper;
 use shape_runner::codec::ShapeCodec;
-use shape_runner::shape::{FeatureDesignInput, FeatureDesignOutput};
+use shape_runner::shape::{FeatureDesignInput, FeatureDesignOutput, FormationInput, FormationOutput};
 use std::io::{self, Read, Write};
 
 #[derive(Parser)]
@@ -47,10 +47,6 @@ async fn main() -> Result<()> {
             .map_err(|e| anyhow!("Failed to read input file {}: {e}", cli.input))?
     };
 
-    // Parse input based on shape type
-    let input: FeatureDesignInput = serde_json::from_str(&input_json)
-        .map_err(|e| anyhow!("Failed to parse input JSON: {e}"))?;
-
     // Connect to server
     println!("Connecting to ShapeRunner server at {}...", cli.server);
     let mut client = ShapeRunnerClientWrapper::connect(cli.server.clone())
@@ -59,31 +55,70 @@ async fn main() -> Result<()> {
 
     println!("Running shape '{}'...", cli.shape);
 
-    // Execute shape with timeout
+    // Execute shape with timeout - handle different shape types
     let timeout = std::time::Duration::from_secs(cli.timeout);
-    let output: FeatureDesignOutput = client
-        .run_shape_with_timeout(cli.shape.clone(), &input, timeout)
-        .await
-        .map_err(|e| anyhow!("Shape execution failed: {e}"))?;
-
-    // Output result
-    match cli.format.as_str() {
-        "json" => {
-            let json = serde_json::to_string_pretty(&output)
-                .map_err(|e| anyhow!("Failed to serialize output: {e}"))?;
-            println!("{}", json);
+    
+    match cli.shape.as_str() {
+        "FeatureDesign" => {
+            let input: FeatureDesignInput = serde_json::from_str(&input_json)
+                .map_err(|e| anyhow!("Failed to parse input JSON: {e}"))?;
+            
+            let output: FeatureDesignOutput = client
+                .run_shape_with_timeout(cli.shape.clone(), &input, timeout)
+                .await
+                .map_err(|e| anyhow!("Shape execution failed: {e}"))?;
+            
+            match cli.format.as_str() {
+                "json" => {
+                    let json = serde_json::to_string_pretty(&output)
+                        .map_err(|e| anyhow!("Failed to serialize output: {e}"))?;
+                    println!("{}", json);
+                }
+                "msgpack" => {
+                    let codec = shape_runner::codec::MsgPackCodec;
+                    let bytes = codec
+                        .encode(&output)
+                        .map_err(|e| anyhow!("Failed to encode output: {e}"))?;
+                    io::stdout()
+                        .write_all(&bytes)
+                        .map_err(|e| anyhow!("Failed to write output: {e}"))?;
+                }
+                _ => {
+                    return Err(anyhow!("Unknown output format: {}", cli.format));
+                }
+            }
         }
-        "msgpack" => {
-            let codec = shape_runner::codec::MsgPackCodec;
-            let bytes = codec
-                .encode(&output)
-                .map_err(|e| anyhow!("Failed to encode output: {e}"))?;
-            io::stdout()
-                .write_all(&bytes)
-                .map_err(|e| anyhow!("Failed to write output: {e}"))?;
+        "Formation" => {
+            let input: FormationInput = serde_json::from_str(&input_json)
+                .map_err(|e| anyhow!("Failed to parse input JSON: {e}"))?;
+            
+            let output: FormationOutput = client
+                .run_shape_with_timeout(cli.shape.clone(), &input, timeout)
+                .await
+                .map_err(|e| anyhow!("Shape execution failed: {e}"))?;
+            
+            match cli.format.as_str() {
+                "json" => {
+                    let json = serde_json::to_string_pretty(&output)
+                        .map_err(|e| anyhow!("Failed to serialize output: {e}"))?;
+                    println!("{}", json);
+                }
+                "msgpack" => {
+                    let codec = shape_runner::codec::MsgPackCodec;
+                    let bytes = codec
+                        .encode(&output)
+                        .map_err(|e| anyhow!("Failed to encode output: {e}"))?;
+                    io::stdout()
+                        .write_all(&bytes)
+                        .map_err(|e| anyhow!("Failed to write output: {e}"))?;
+                }
+                _ => {
+                    return Err(anyhow!("Unknown output format: {}", cli.format));
+                }
+            }
         }
         _ => {
-            return Err(anyhow!("Unknown output format: {}", cli.format));
+            return Err(anyhow!("Unknown shape: {}. Supported shapes: FeatureDesign, Formation", cli.shape));
         }
     }
 

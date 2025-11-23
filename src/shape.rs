@@ -57,3 +57,39 @@ pub fn feature_design_output_typedef() -> TypeDef {
         },
     ])
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FormationInput {
+    pub formation_description: String,
+    pub unit_count: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Coordinate {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FormationOutput {
+    pub coordinates: Vec<Coordinate>,
+}
+
+// TypeDef for FormationOutput (for validation of LLM JSON)
+pub fn formation_output_typedef() -> TypeDef {
+    TypeDef::Object(vec![
+        FieldDef {
+            name: "coordinates",
+            ty: TypeDef::List(Box::new(TypeDef::Object(vec![
+                FieldDef {
+                    name: "x",
+                    ty: TypeDef::Number,
+                },
+                FieldDef {
+                    name: "y",
+                    ty: TypeDef::Number,
+                },
+            ]))),
+        },
+    ])
+}
